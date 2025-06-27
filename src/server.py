@@ -28,6 +28,11 @@ from src.tools.slack.channels import (
     get_slack_channel_info as slack_channel_info
 )
 
+# Import GitHub tools
+from src.tools.github.repos import read_github_repo as github_read_repo
+from src.tools.github.issues import read_github_issues as github_read_issues
+from src.tools.github.pulls import read_github_prs as github_read_prs
+
 # Create an MCP server
 mcp = FastMCP(
     name=settings.server_name,
@@ -214,26 +219,92 @@ async def get_slack_channel_info(
     return await slack_channel_info(channel_name, include_members, api_key)
 
 
-# ============= GITHUB TOOLS (Placeholder) =============
+# ============= GITHUB TOOLS =============
 
 @mcp.tool()
-async def read_github(
+async def read_github_repo(
     repo: str,
-    resource_type: str = "issues",
+    include_stats: bool = True,
     api_key: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Read data from GitHub repository (placeholder)
+    Get repository metadata, statistics, and configuration
     
     Args:
-        repo: Repository in format 'owner/repo'
-        resource_type: Type of resource to read ('issues', 'prs', 'commits')
-        api_key: GitHub personal access token
+        repo: Repository in 'owner/repo' format
+        include_stats: Whether to include statistics like stars, forks
+        api_key: GitHub personal access token (optional if set in environment)
     
     Returns:
-        GitHub data
+        Repository information including metadata, stats, and URLs
     """
-    return {"error": "GitHub integration not yet implemented"}
+    if not api_key:
+        api_key = settings.github_token
+    return await github_read_repo(repo, include_stats, api_key)
+
+
+@mcp.tool()
+async def read_github_issues(
+    repo: str,
+    state: str = "open",
+    labels: Optional[List[str]] = None,
+    assignee: Optional[str] = None,
+    sort: str = "created",
+    direction: str = "desc",
+    limit: int = 30,
+    api_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    List repository issues with filtering options
+    
+    Args:
+        repo: Repository in 'owner/repo' format
+        state: Issue state - 'open', 'closed', or 'all'
+        labels: List of label names to filter by
+        assignee: Username to filter by assignee
+        sort: Sort by 'created', 'updated', or 'comments'
+        direction: Sort direction - 'asc' or 'desc'
+        limit: Maximum number of issues to return
+        api_key: GitHub personal access token (optional if set in environment)
+    
+    Returns:
+        List of issues with metadata, labels, assignees, and timestamps
+    """
+    if not api_key:
+        api_key = settings.github_token
+    return await github_read_issues(repo, state, labels, assignee, sort, direction, limit, api_key)
+
+
+@mcp.tool()
+async def read_github_prs(
+    repo: str,
+    state: str = "open",
+    head: Optional[str] = None,
+    base: Optional[str] = None,
+    sort: str = "created",
+    direction: str = "desc",
+    limit: int = 30,
+    api_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    List repository pull requests with filtering options
+    
+    Args:
+        repo: Repository in 'owner/repo' format
+        state: PR state - 'open', 'closed', or 'all'
+        head: Filter by head branch (format: 'user:branch')
+        base: Filter by base branch
+        sort: Sort by 'created', 'updated', or 'popularity' (comment count)
+        direction: Sort direction - 'asc' or 'desc'
+        limit: Maximum number of PRs to return
+        api_key: GitHub personal access token (optional if set in environment)
+    
+    Returns:
+        List of pull requests with metadata, merge status, and review information
+    """
+    if not api_key:
+        api_key = settings.github_token
+    return await github_read_prs(repo, state, head, base, sort, direction, limit, api_key)
 
 
 # Run the server
