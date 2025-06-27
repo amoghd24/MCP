@@ -14,7 +14,12 @@ import json
 
 # Import our modules
 from src.config.settings import settings
-from src.tools.notion_tool import NotionClient, extract_title, simplify_properties, parse_blocks_to_text
+from src.tools.notion_tool import (
+    NotionClient, extract_title, simplify_properties, parse_blocks_to_text,
+    create_text_block, create_heading_block, create_bullet_list_item,
+    create_numbered_list_item, create_code_block, create_divider_block,
+    parse_markdown_to_blocks
+)
 from src.auth.middleware import AuthManager
 
 # Create an MCP server
@@ -26,13 +31,6 @@ mcp = FastMCP(
 
 # Initialize auth manager
 auth_manager = AuthManager(settings.encryption_key)
-
-
-# Simple tool (calculator) - keeping for testing
-@mcp.tool()
-def calculator(a: int, b: int) -> int:
-    """Calculate the sum of two numbers"""
-    return a + b
 
 
 # ============= NOTION TOOLS =============
@@ -135,67 +133,194 @@ async def read_notion_page(
 
 
 @mcp.tool()
-async def query_notion_database(
-    database_id: str,
-    filter_json: Optional[str] = None,  # JSON string for complex filters
-    property_filter: Optional[str] = None,  # Simple property=value filter
+async def create_notion_page(
+    parent_page_id: str,
+    title: str,
+    content: Optional[str] = None,
+    content_format: str = "markdown",  # "markdown" or "plain"
     api_key: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Query a Notion database with optional filters
+    Create a new Notion page
     
     Args:
-        database_id: The ID of the Notion database
-        filter_json: Complex filter as JSON string (follows Notion API format)
-        property_filter: Simple filter format like "Status=Done" 
+        parent_page_id: ID of the parent page where this page will be created
+        title: Title of the new page
+        content: Optional content for the page
+        content_format: Format of content - 'markdown' or 'plain' (default: markdown)
         api_key: Notion API key (optional if set in environment)
     
     Returns:
-        Database query results
+        Created page information
     """
     notion_api_key = api_key or settings.notion_api_key or os.getenv("NOTION_API_KEY")
     if not notion_api_key:
         return {"error": "No API key provided"}
     
-    # Check rate limit
-    if not api_rate_limiter.check_api_limit("notion", "default"):
-        wait_time = api_rate_limiter.wait_if_limited("notion", "default")
-        return {"error": f"Rate limit exceeded. Please wait {wait_time:.1f} seconds"}
+    client = NotionClient(notion_api_key)
+    try:
+        # Prepare parent object
+        parent = {"page_id": parent_page_id}
+        
+        # Prepare properties (title)
+        properties = {
+            "title": {
+                "title": [{"text": {"content": title}}]
+            }
+        }
+        
+        # Prepare content blocks if provided
+        children = None
+        if content:
+            if content_format == "markdown":
+                children = parse_markdown_to_blocks(content)
+            else:
+                # Plain text - just create paragraph blocks
+                children = [create_text_block(line) for line in content.split('\n') if line.strip()]
+        
+        # Create the page
+        result = await client.create_page(parent, properties, children)
+        
+        return {
+            "id": result["id"],
+            "url": result.get("url", ""),
+            "title": title,
+            "created_time": result.get("created_time", ""),
+            "success": True
+        }
+    except Exception as e:
+        return {"error": f"Failed to create page: {str(e)}"}
+    finally:
+        await client.close()
+
+
+@mcp.tool()
+async def add_notion_content(
+    page_id: str,
+    content: str,
+    content_format: str = "markdown",  # "markdown" or "plain"
+    api_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Add content to an existing Notion page
+    
+    Args:
+        page_id: ID of the page to add content to
+        content: Content to add
+        content_format: Format of content - 'markdown' or 'plain' (default: markdown)
+        api_key: Notion API key (optional if set in environment)
+    
+    Returns:
+        Success status and block information
+    """
+    notion_api_key = api_key or settings.notion_api_key or os.getenv("NOTION_API_KEY")
+    if not notion_api_key:
+        return {"error": "No API key provided"}
     
     client = NotionClient(notion_api_key)
     try:
-        # Parse filters
-        filter_dict = None
-        if filter_json:
-            filter_dict = json.loads(filter_json)
-        elif property_filter and "=" in property_filter:
-            # Convert simple filter to Notion format
-            prop, value = property_filter.split("=", 1)
-            filter_dict = {
-                "property": prop.strip(),
-                "select": {"equals": value.strip()}
-            }
+        # Parse content into blocks
+        if content_format == "markdown":
+            blocks = parse_markdown_to_blocks(content)
+        else:
+            # Plain text - create paragraph blocks
+            blocks = [create_text_block(line) for line in content.split('\n') if line.strip()]
         
-        results = await client.query_database(database_id, filter_dict)
+        if not blocks:
+            return {"error": "No content to add"}
         
-        # Simplify results
-        simplified_results = []
-        for item in results.get("results", []):
-            simplified_results.append({
-                "id": item["id"],
-                "title": extract_title(item),
-                "properties": simplify_properties(item.get("properties", {})),
-                "url": item.get("url", ""),
-                "created_time": item.get("created_time", "")
-            })
+        # Append blocks to the page
+        result = await client.append_blocks(page_id, blocks)
         
         return {
-            "results": simplified_results,
-            "count": len(simplified_results),
-            "has_more": results.get("has_more", False)
+            "success": True,
+            "blocks_added": len(result.get("results", [])),
+            "page_id": page_id
         }
     except Exception as e:
-        return {"error": f"Failed to query database: {str(e)}"}
+        return {"error": f"Failed to add content: {str(e)}"}
+    finally:
+        await client.close()
+
+
+@mcp.tool()
+async def create_notion_database(
+    parent_page_id: str,
+    title: str,
+    properties_schema: Dict[str, str],
+    api_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Create a new Notion database
+    
+    Args:
+        parent_page_id: ID of the parent page where database will be created
+        title: Title of the database
+        properties_schema: Schema definition as {"PropertyName": "type"} 
+                          where type is: "title", "text", "number", "select", "multi_select", 
+                          "checkbox", "date", "url", "email", "phone"
+        api_key: Notion API key (optional if set in environment)
+    
+    Returns:
+        Created database information
+    """
+    notion_api_key = api_key or settings.notion_api_key or os.getenv("NOTION_API_KEY")
+    if not notion_api_key:
+        return {"error": "No API key provided"}
+    
+    client = NotionClient(notion_api_key)
+    try:
+        # Prepare parent
+        parent = {"page_id": parent_page_id}
+        
+        # Prepare title
+        title_rich_text = [{"text": {"content": title}}]
+        
+        # Convert simple schema to Notion property format
+        properties = {}
+        
+        # Ensure there's at least one title property
+        has_title = False
+        for prop_name, prop_type in properties_schema.items():
+            if prop_type == "title":
+                properties[prop_name] = {"title": {}}
+                has_title = True
+            elif prop_type == "text":
+                properties[prop_name] = {"rich_text": {}}
+            elif prop_type == "number":
+                properties[prop_name] = {"number": {"format": "number"}}
+            elif prop_type == "checkbox":
+                properties[prop_name] = {"checkbox": {}}
+            elif prop_type == "select":
+                properties[prop_name] = {"select": {"options": []}}
+            elif prop_type == "multi_select":
+                properties[prop_name] = {"multi_select": {"options": []}}
+            elif prop_type == "date":
+                properties[prop_name] = {"date": {}}
+            elif prop_type == "url":
+                properties[prop_name] = {"url": {}}
+            elif prop_type == "email":
+                properties[prop_name] = {"email": {}}
+            elif prop_type == "phone":
+                properties[prop_name] = {"phone_number": {}}
+        
+        # If no title property, add a default one
+        if not has_title:
+            properties["Name"] = {"title": {}}
+        
+        # Create the database
+        result = await client.create_database(parent, title_rich_text, properties)
+        
+        return {
+            "id": result["id"],
+            "url": result.get("url", ""),
+            "title": title,
+            "created_time": result.get("created_time", ""),
+            "properties": list(properties.keys()),
+            "success": True
+        }
+    except Exception as e:
+        return {"error": f"Failed to create database: {str(e)}"}
     finally:
         await client.close()
 
@@ -242,30 +367,6 @@ async def read_github(
         GitHub data
     """
     return {"error": "GitHub integration not yet implemented"}
-
-
-# ============= SERVER TOOLS =============
-
-@mcp.tool()
-def server_info() -> Dict[str, Any]:
-    """Get information about this MCP server"""
-    return {
-        "name": settings.server_name,
-        "version": "0.1.0",
-        "tools": [
-            {"name": "search_notion", "description": "Search Notion pages and databases"},
-            {"name": "read_notion_page", "description": "Read a specific Notion page"},
-            {"name": "query_notion_database", "description": "Query a Notion database"},
-            {"name": "read_slack", "description": "Read Slack messages (coming soon)"},
-            {"name": "read_github", "description": "Read GitHub data (coming soon)"},
-        ],
-        "transport": settings.transport,
-        "rate_limits": {
-            "notion": "180 requests/minute",
-            "slack": "60 requests/minute",
-            "github": "5000 requests/hour"
-        }
-    }
 
 
 # Run the server

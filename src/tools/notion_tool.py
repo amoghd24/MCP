@@ -1,6 +1,6 @@
 """
 Notion Tool for MCP Server
-Provides integration with Notion API for searching, reading pages, and querying databases
+Provides integration with Notion API for searching, reading pages, and creating content
 """
 
 from typing import Optional, Dict, List, Any, Union
@@ -64,17 +64,43 @@ class NotionClient:
         
         return blocks
     
-    async def query_database(self, database_id: str, filter_dict: Optional[Dict] = None, 
-                           sorts: Optional[List[Dict]] = None) -> Dict:
-        """Query a database with optional filters and sorts"""
-        payload = {}
-        if filter_dict:
-            payload["filter"] = filter_dict
-        if sorts:
-            payload["sorts"] = sorts
+    async def create_page(self, parent: Dict, properties: Dict, children: Optional[List[Dict]] = None) -> Dict:
+        """Create a new page in Notion"""
+        payload = {
+            "parent": parent,
+            "properties": properties
+        }
+        if children:
+            payload["children"] = children
         
         response = await self.client.post(
-            f"{self.base_url}/databases/{database_id}/query",
+            f"{self.base_url}/pages",
+            json=payload
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    async def append_blocks(self, parent_id: str, children: List[Dict]) -> Dict:
+        """Append blocks to a page or block"""
+        payload = {"children": children}
+        
+        response = await self.client.patch(
+            f"{self.base_url}/blocks/{parent_id}/children",
+            json=payload
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    async def create_database(self, parent: Dict, title: List[Dict], properties: Dict) -> Dict:
+        """Create a new database"""
+        payload = {
+            "parent": parent,
+            "title": title,
+            "properties": properties
+        }
+        
+        response = await self.client.post(
+            f"{self.base_url}/databases",
             json=payload
         )
         response.raise_for_status()
@@ -172,4 +198,134 @@ def parse_blocks_to_text(blocks: List[Dict]) -> str:
         elif block_type == "divider":
             text_parts.append("---")
     
-    return "\n\n".join(text_parts) 
+    return "\n\n".join(text_parts)
+
+
+# Helper functions for creating content
+def create_text_block(text: str, type: str = "paragraph") -> Dict:
+    """Create a text block for Notion"""
+    return {
+        "object": "block",
+        "type": type,
+        type: {
+            "rich_text": [{
+                "type": "text",
+                "text": {"content": text}
+            }]
+        }
+    }
+
+
+def create_heading_block(text: str, level: int = 1) -> Dict:
+    """Create a heading block (level 1, 2, or 3)"""
+    heading_type = f"heading_{level}"
+    return create_text_block(text, heading_type)
+
+
+def create_bullet_list_item(text: str) -> Dict:
+    """Create a bulleted list item"""
+    return create_text_block(text, "bulleted_list_item")
+
+
+def create_numbered_list_item(text: str) -> Dict:
+    """Create a numbered list item"""
+    return create_text_block(text, "numbered_list_item")
+
+
+def create_code_block(code: str, language: str = "plain text") -> Dict:
+    """Create a code block"""
+    return {
+        "object": "block",
+        "type": "code",
+        "code": {
+            "rich_text": [{
+                "type": "text",
+                "text": {"content": code}
+            }],
+            "language": language
+        }
+    }
+
+
+def create_divider_block() -> Dict:
+    """Create a divider block"""
+    return {
+        "object": "block",
+        "type": "divider",
+        "divider": {}
+    }
+
+
+def create_rich_text(text: str, bold: bool = False, italic: bool = False, 
+                    code: bool = False, color: str = "default") -> List[Dict]:
+    """Create rich text with formatting"""
+    return [{
+        "type": "text",
+        "text": {"content": text},
+        "annotations": {
+            "bold": bold,
+            "italic": italic,
+            "strikethrough": False,
+            "underline": False,
+            "code": code,
+            "color": color
+        }
+    }]
+
+
+def parse_markdown_to_blocks(markdown_text: str) -> List[Dict]:
+    """Convert markdown text to Notion blocks (basic implementation)"""
+    blocks = []
+    lines = markdown_text.split('\n')
+    
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip()
+        
+        # Skip empty lines
+        if not line:
+            i += 1
+            continue
+        
+        # Headings
+        if line.startswith('### '):
+            blocks.append(create_heading_block(line[4:], 3))
+        elif line.startswith('## '):
+            blocks.append(create_heading_block(line[3:], 2))
+        elif line.startswith('# '):
+            blocks.append(create_heading_block(line[2:], 1))
+        
+        # Lists
+        elif line.startswith('- ') or line.startswith('* '):
+            blocks.append(create_bullet_list_item(line[2:]))
+        elif line[0].isdigit() and line[1:3] == '. ':
+            blocks.append(create_numbered_list_item(line[3:]))
+        
+        # Code blocks
+        elif line.startswith('```'):
+            code_lines = []
+            language = line[3:].strip() or "plain text"
+            i += 1
+            while i < len(lines) and not lines[i].startswith('```'):
+                code_lines.append(lines[i])
+                i += 1
+            blocks.append(create_code_block('\n'.join(code_lines), language))
+        
+        # Divider
+        elif line in ['---', '***', '___']:
+            blocks.append(create_divider_block())
+        
+        # Regular paragraph
+        else:
+            # Collect continuous lines as a paragraph
+            paragraph_lines = [line]
+            i += 1
+            while i < len(lines) and lines[i].strip() and not any(lines[i].startswith(p) for p in ['#', '-', '*', '```', '---']):
+                paragraph_lines.append(lines[i].strip())
+                i += 1
+            blocks.append(create_text_block(' '.join(paragraph_lines)))
+            i -= 1
+        
+        i += 1
+    
+    return blocks 
