@@ -8,5 +8,6 @@ cryptography
 notion-client
 slack-sdk
 PyGithub
+aiohttp  # For async HTTP requests
 redis  # Optional, for advanced caching
 
