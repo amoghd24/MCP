@@ -3,4 +3,10 @@ openai==1.75.0
 python-dotenv
 ipykernel
 httpx
+pydantic-settings
+cryptography
+notion-client
+slack-sdk
+PyGithub
+redis  # Optional, for advanced caching
 
