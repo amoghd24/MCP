@@ -1,12 +1,10 @@
 """
-Notion Tool for MCP Server
-Provides integration with Notion API for searching, reading pages, and creating content
+Notion Client and Helper Functions
+Core client for interacting with Notion API
 """
 
-from typing import Optional, Dict, List, Any, Union
+from typing import Optional, Dict, List, Any
 import httpx
-from datetime import datetime
-import json
 import os
 
 
