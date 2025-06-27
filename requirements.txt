@@ -10,4 +10,9 @@ slack-sdk
 PyGithub
 aiohttp  # For async HTTP requests
 redis  # Optional, for advanced caching
+nest_asyncio  # For nested event loops support
+langchain==0.3.14
+langchain-openai==0.3.0
+langgraph==0.2.75
+langchain-core>=0.3.29
 

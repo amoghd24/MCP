@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     notion_api_key: Optional[str] = None
     slack_bot_token: Optional[str] = None
     github_token: Optional[str] = None
+    openai_api_key: Optional[str] = None  # Added for MCP client testing
     
     # Security
     encryption_key: Optional[str] = None
