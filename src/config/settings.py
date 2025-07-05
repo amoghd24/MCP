@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     github_token: Optional[str] = None
     openai_api_key: Optional[str] = None  # Added for MCP client testing
     
+    # Judgeval Configuration (Optional - for tracing and monitoring)
+    judgment_api_key: Optional[str] = None
+    judgment_org_id: Optional[str] = None
+    judgment_api_url: Optional[str] = None  # For self-hosted instances
+    
     # Security
     encryption_key: Optional[str] = None
     enable_auth: bool = True

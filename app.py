@@ -10,16 +10,22 @@ from mcp.client.stdio import stdio_client
 
 # LangChain imports
 from langchain_core.tools import StructuredTool
-from langchain_core.pydantic_v1 import BaseModel, Field, create_model
+from pydantic import BaseModel, Field, create_model
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage
+
+# Judgeval imports for tracing
+from judgeval.tracer import Tracer, wrap
 
 # Apply nest_asyncio to allow nested event loops (needed for Jupyter/IPython)
 nest_asyncio.apply()
 
 # Load environment variables
 load_dotenv(".env")
+
+# Initialize Judgeval tracer
+judgment = Tracer(project_name="mcp-integration-hub")
 
 
 def create_pydantic_model_from_schema(name: str, schema: Dict[str, Any]) -> Type[BaseModel]:
@@ -65,11 +71,23 @@ class MCPLangChainClient:
         # Initialize session and client objects
         self.session: Optional[ClientSession] = None
         self.exit_stack = AsyncExitStack()
+        
+        # Initialize OpenAI client with Judgeval tracing
         self.llm = ChatOpenAI(model=model, temperature=0)
+        # Wrap the actual OpenAI client (not the completions resource)
+        if hasattr(self.llm, '_client'):
+            self.llm._client = wrap(self.llm._client)
+        else:
+            # Fallback: create wrapped OpenAI client directly
+            from openai import OpenAI
+            wrapped_client = wrap(OpenAI())
+            self.llm.client = wrapped_client
+        
         self.stdio: Optional[Any] = None
         self.write: Optional[Any] = None
         self.agent_executor = None
 
+    @judgment.observe(span_type="function")
     async def connect_to_server(self, server_script_path: str = "src/server.py"):
         """Connect to an MCP server and set up LangChain tools.
 
@@ -141,8 +159,9 @@ class MCPLangChainClient:
             state_modifier="You are a helpful assistant that analyzes GitHub repositories and sends notifications to Slack. Always complete the task fully - if asked to send a message to Slack, make sure you actually send it."
         )
 
+    @judgment.observe(span_type="agent_query")
     async def process_query(self, query: str) -> str:
-        """Process a query using the LangChain ReAct agent.
+        """Process a query using the LangChain ReAct agent with detailed tracing.
 
         Args:
             query: The user query.
@@ -153,39 +172,70 @@ class MCPLangChainClient:
         if not self.agent_executor:
             raise ValueError("Agent not initialized. Call connect_to_server first.")
         
-        # Execute the agent with the query
         print("\nExecuting ReAct agent...")
         
-        # Stream the agent's response
-        async for chunk in self.agent_executor.astream(
-            {"messages": [HumanMessage(content=query)]}
-        ):
-            # Print agent's reasoning steps
+        # Initialize agent input
+        agent_input = await self._init_agent_input(query)
+        
+        # Stream and trace each step
+        async for chunk in self.agent_executor.astream(agent_input):
             if "agent" in chunk:
-                for message in chunk["agent"]["messages"]:
-                    if hasattr(message, "content") and message.content:
-                        print(f"\nAgent: {message.content}")
+                await self._trace_agent_reasoning(chunk["agent"])
             
-            # Print tool calls
             if "tools" in chunk:
-                for message in chunk["tools"]["messages"]:
-                    if hasattr(message, "name"):
-                        print(f"\nTool ({message.name}): {message.content[:200]}...")
+                await self._trace_tool_calls(chunk["tools"])
         
         # Get final response
-        result = await self.agent_executor.ainvoke(
-            {"messages": [HumanMessage(content=query)]}
-        )
+        final_message = await self._get_final_response(agent_input)
         
-        # Extract the final message
-        final_message = result["messages"][-1].content
         return final_message
 
+    @judgment.observe(span_type="agent_init")
+    async def _init_agent_input(self, query: str):
+        """Initialize agent input with tracing"""
+        messages = [HumanMessage(content=query)]
+        return {"messages": messages}
+
+    @judgment.observe(span_type="final_response")
+    async def _get_final_response(self, agent_input):
+        """Get final response with tracing"""
+        result = await self.agent_executor.ainvoke(agent_input)
+        return result["messages"][-1].content
+
+    @judgment.observe(span_type="agent_reasoning")
+    async def _trace_agent_reasoning(self, agent_chunk):
+        """Trace agent's reasoning steps"""
+        for message in agent_chunk["messages"]:
+            if hasattr(message, "content") and message.content:
+                print(f"\nAgent: {message.content}")
+
+    @judgment.observe(span_type="tool_execution")
+    async def _trace_tool_calls(self, tools_chunk):
+        """Trace individual tool calls"""
+        for message in tools_chunk["messages"]:
+            if hasattr(message, "name"):
+                tool_name = message.name
+                tool_response = message.content
+                
+                # Execute individual tool tracing
+                await self._trace_individual_tool(tool_name, tool_response)
+
+    async def _trace_individual_tool(self, tool_name: str, tool_response: str):
+        """Trace a specific tool call"""
+        # Create a dynamic span type for each tool
+        @judgment.observe(span_type=f"tool_{tool_name}")
+        async def execute_tool_trace():
+            print(f"\nTool ({tool_name}): {tool_response[:200]}...")
+        
+        await execute_tool_trace()
+
+    @judgment.observe(span_type="cleanup")
     async def cleanup(self):
         """Clean up resources."""
         await self.exit_stack.aclose()
 
 
+@judgment.observe(span_type="function")
 async def main():
     """Main entry point for the client."""
     client = MCPLangChainClient()
