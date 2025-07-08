@@ -156,7 +156,7 @@ class MCPLangChainClient:
         self.agent_executor = create_react_agent(
             self.llm, 
             langchain_tools,
-            state_modifier="You are a helpful assistant that analyzes GitHub repositories and sends notifications to Slack. Always complete the task fully - if asked to send a message to Slack, make sure you actually send it."
+            state_modifier="You are a helpful assistant"
         )
 
     @judgment.observe(span_type="agent_query")
@@ -177,10 +177,16 @@ class MCPLangChainClient:
         # Initialize agent input
         agent_input = await self._init_agent_input(query)
         
+        # Variable to store the final response
+        self.final_response = None
+        
         # Stream and trace each step
         async for chunk in self.agent_executor.astream(agent_input):
             if "agent" in chunk:
                 await self._trace_agent_reasoning(chunk["agent"])
+                # Capture the final response from the last agent message
+                if chunk.get("agent", {}).get("messages"):
+                    self.final_response = chunk["agent"]["messages"][-1].content
             
             if "tools" in chunk:
                 await self._trace_tool_calls(chunk["tools"])
@@ -199,8 +205,15 @@ class MCPLangChainClient:
     @judgment.observe(span_type="final_response")
     async def _get_final_response(self, agent_input):
         """Get final response with tracing"""
-        result = await self.agent_executor.ainvoke(agent_input)
-        return result["messages"][-1].content
+        # LEGACY: This causes a duplicate execution of the agent
+        # result = await self.agent_executor.ainvoke(agent_input)
+        # return result["messages"][-1].content
+        
+        # Return the captured final response
+        if self.final_response:
+            return self.final_response
+        else:
+            return "Task completed, but unable to capture the final response."
 
     @judgment.observe(span_type="agent_reasoning")
     async def _trace_agent_reasoning(self, agent_chunk):
