@@ -122,7 +122,11 @@ class APIRateLimiter:
             "notion": RateLimiter(requests_per_minute=180, burst=20),
             "slack": RateLimiter(requests_per_minute=60, burst=10),
             "github": RateLimiter(requests_per_minute=5000, burst=100),  # GitHub has higher limits
+            "amplitude": RateLimiter(requests_per_minute=360, burst=5),  # 360 queries/hour, 5 concurrent
         }
+        # Amplitude-specific cost tracking
+        self.amplitude_costs: Dict[str, Dict[str, float]] = {}  # user_id -> {timestamp -> cost}
+        self.amplitude_concurrent: Dict[str, int] = {}  # user_id -> active_requests
     
     def check_api_limit(self, api: str, user_id: str) -> bool:
         """Check rate limit for specific API and user"""
@@ -141,6 +145,62 @@ class APIRateLimiter:
                 wait_time = (1 - bucket.tokens) / bucket.refill_rate
                 return wait_time
         return None
+    
+    def calculate_amplitude_cost(self, days: int, conditions: int, query_type_cost: int) -> int:
+        """Calculate Amplitude API cost: (# of days) * (# of conditions) * (query type cost)"""
+        return days * conditions * query_type_cost
+    
+    def check_amplitude_limits(self, user_id: str, cost: int) -> bool:
+        """Check Amplitude-specific limits: cost per hour and concurrent requests"""
+        now = time.time()
+        hour_ago = now - 3600  # 1 hour in seconds
+        
+        # Initialize user tracking if needed
+        if user_id not in self.amplitude_costs:
+            self.amplitude_costs[user_id] = {}
+        if user_id not in self.amplitude_concurrent:
+            self.amplitude_concurrent[user_id] = 0
+        
+        # Clean up old cost entries (older than 1 hour)
+        user_costs = self.amplitude_costs[user_id]
+        old_timestamps = [ts for ts in user_costs.keys() if float(ts) < hour_ago]
+        for ts in old_timestamps:
+            del user_costs[ts]
+        
+        # Calculate current hourly cost
+        current_hourly_cost = sum(user_costs.values())
+        
+        # Check cost limit (1000 cost per 5 minutes = 12000 per hour)
+        if current_hourly_cost + cost > 12000:
+            return False
+        
+        # Check concurrent requests limit (5 concurrent)
+        if self.amplitude_concurrent[user_id] >= 5:
+            return False
+        
+        return True
+    
+    def start_amplitude_request(self, user_id: str, cost: int) -> bool:
+        """Start tracking an Amplitude request"""
+        if not self.check_amplitude_limits(user_id, cost):
+            return False
+        
+        now = time.time()
+        
+        # Record the cost
+        self.amplitude_costs[user_id][str(now)] = cost
+        
+        # Increment concurrent request counter
+        if user_id not in self.amplitude_concurrent:
+            self.amplitude_concurrent[user_id] = 0
+        self.amplitude_concurrent[user_id] += 1
+        
+        return True
+    
+    def end_amplitude_request(self, user_id: str):
+        """End tracking an Amplitude request"""
+        if user_id in self.amplitude_concurrent and self.amplitude_concurrent[user_id] > 0:
+            self.amplitude_concurrent[user_id] -= 1
 
 
 # Global API rate limiter

@@ -33,6 +33,25 @@ from src.tools.github.repos import read_github_repo as github_read_repo
 from src.tools.github.issues import read_github_issues as github_read_issues
 from src.tools.github.pulls import read_github_prs as github_read_prs
 
+# Import Amplitude tools
+from src.tools.amplitude.segmentation import (
+    get_amplitude_event_segmentation as amplitude_event_segmentation,
+    get_amplitude_event_totals as amplitude_event_totals
+)
+from src.tools.amplitude.funnels import (
+    get_amplitude_funnel_analysis as amplitude_funnel_analysis,
+    get_amplitude_conversion_summary as amplitude_conversion_summary
+)
+from src.tools.amplitude.retention import (
+    get_amplitude_retention as amplitude_retention,
+    get_amplitude_cohort_retention as amplitude_cohort_retention,
+    get_amplitude_retention_summary as amplitude_retention_summary
+)
+from src.tools.amplitude.taxonomy import (
+    get_amplitude_events_list as amplitude_events_list,
+    get_amplitude_event_details as amplitude_event_details
+)
+
 # Create an MCP server
 mcp = FastMCP(
     name=settings.server_name,
@@ -305,6 +324,274 @@ async def read_github_prs(
     if not api_key:
         api_key = settings.github_token
     return await github_read_prs(repo, state, head, base, sort, direction, limit, api_key)
+
+
+# ============= AMPLITUDE TOOLS =============
+
+@mcp.tool()
+async def get_amplitude_event_segmentation(
+    start_date: str,
+    end_date: str,
+    events: List[str],
+    segments: Optional[List[str]] = None,
+    group_by: Optional[str] = None,
+    interval: str = "daily",
+    api_key: Optional[str] = None,
+    secret_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get event segmentation data from Amplitude Dashboard API
+    
+    Args:
+        start_date: Start date in YYYYMMDD format (e.g., "20240101")
+        end_date: End date in YYYYMMDD format (e.g., "20240131")
+        events: List of event names to analyze (up to 2 events)
+        segments: Optional list of segment names to filter by
+        group_by: Optional property to group results by
+        interval: Interval type - "daily", "weekly", or "monthly"
+        api_key: Amplitude API key (optional if set in environment)
+        secret_key: Amplitude secret key (optional if set in environment)
+    
+    Returns:
+        Event segmentation data with counts, unique users, and trends
+    """
+    if not api_key:
+        api_key = settings.amplitude_api_key
+    if not secret_key:
+        secret_key = settings.amplitude_secret_key
+    return await amplitude_event_segmentation(start_date, end_date, events, segments, group_by, interval, api_key, secret_key)
+
+
+@mcp.tool()
+async def get_amplitude_event_totals(
+    start_date: str,
+    end_date: str,
+    events: List[str],
+    api_key: Optional[str] = None,
+    secret_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get event totals for quick summary analysis
+    
+    Args:
+        start_date: Start date in YYYYMMDD format
+        end_date: End date in YYYYMMDD format
+        events: List of event names to get totals for
+        api_key: Amplitude API key (optional if set in environment)
+        secret_key: Amplitude secret key (optional if set in environment)
+    
+    Returns:
+        Dictionary with total events and unique user counts
+    """
+    if not api_key:
+        api_key = settings.amplitude_api_key
+    if not secret_key:
+        secret_key = settings.amplitude_secret_key
+    return await amplitude_event_totals(start_date, end_date, events, api_key, secret_key)
+
+
+@mcp.tool()
+async def get_amplitude_funnel_analysis(
+    events: List[str],
+    start_date: str,
+    end_date: str,
+    segments: Optional[List[str]] = None,
+    group_by: Optional[str] = None,
+    conversion_window_days: int = 7,
+    api_key: Optional[str] = None,
+    secret_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get funnel analysis data from Amplitude Dashboard API
+    
+    Args:
+        events: List of event names for funnel steps (in order)
+        start_date: Start date in YYYYMMDD format
+        end_date: End date in YYYYMMDD format
+        segments: Optional list of segment names to filter by
+        group_by: Optional property to group results by
+        conversion_window_days: Number of days for conversion window
+        api_key: Amplitude API key (optional if set in environment)
+        secret_key: Amplitude secret key (optional if set in environment)
+    
+    Returns:
+        Funnel analysis with conversion rates and drop-off data
+    """
+    if not api_key:
+        api_key = settings.amplitude_api_key
+    if not secret_key:
+        secret_key = settings.amplitude_secret_key
+    return await amplitude_funnel_analysis(events, start_date, end_date, segments, group_by, conversion_window_days, api_key, secret_key)
+
+
+@mcp.tool()
+async def get_amplitude_conversion_summary(
+    events: List[str],
+    start_date: str,
+    end_date: str,
+    conversion_window_days: int = 7,
+    api_key: Optional[str] = None,
+    secret_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get simplified conversion summary for quick analysis
+    
+    Args:
+        events: List of event names for funnel steps (in order)
+        start_date: Start date in YYYYMMDD format
+        end_date: End date in YYYYMMDD format
+        conversion_window_days: Number of days for conversion window
+        api_key: Amplitude API key (optional if set in environment)
+        secret_key: Amplitude secret key (optional if set in environment)
+    
+    Returns:
+        Conversion summary with overall rates and drop-offs
+    """
+    if not api_key:
+        api_key = settings.amplitude_api_key
+    if not secret_key:
+        secret_key = settings.amplitude_secret_key
+    return await amplitude_conversion_summary(events, start_date, end_date, conversion_window_days, api_key, secret_key)
+
+
+@mcp.tool()
+async def get_amplitude_retention(
+    start_event: str,
+    return_event: str,
+    start_date: str,
+    end_date: str,
+    retention_type: str = "retention_N_day",
+    api_key: Optional[str] = None,
+    secret_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get retention analysis data from Amplitude Dashboard API
+    
+    Args:
+        start_event: Initial event that defines the cohort
+        return_event: Event that defines user return/retention
+        start_date: Start date in YYYYMMDD format
+        end_date: End date in YYYYMMDD format
+        retention_type: Type of retention analysis ("retention_N_day" or "retention_bracket")
+        api_key: Amplitude API key (optional if set in environment)
+        secret_key: Amplitude secret key (optional if set in environment)
+    
+    Returns:
+        Retention analysis with cohort data and retention curves
+    """
+    if not api_key:
+        api_key = settings.amplitude_api_key
+    if not secret_key:
+        secret_key = settings.amplitude_secret_key
+    return await amplitude_retention(start_event, return_event, start_date, end_date, retention_type, api_key, secret_key)
+
+
+@mcp.tool()
+async def get_amplitude_cohort_retention(
+    start_event: str,
+    return_event: str,
+    start_date: str,
+    end_date: str,
+    api_key: Optional[str] = None,
+    secret_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get cohort retention analysis (N-day retention)
+    
+    Args:
+        start_event: Initial event that defines the cohort
+        return_event: Event that defines user return/retention
+        start_date: Start date in YYYYMMDD format
+        end_date: End date in YYYYMMDD format
+        api_key: Amplitude API key (optional if set in environment)
+        secret_key: Amplitude secret key (optional if set in environment)
+    
+    Returns:
+        Cohort retention data with insights and recommendations
+    """
+    if not api_key:
+        api_key = settings.amplitude_api_key
+    if not secret_key:
+        secret_key = settings.amplitude_secret_key
+    return await amplitude_cohort_retention(start_event, return_event, start_date, end_date, api_key, secret_key)
+
+
+@mcp.tool()
+async def get_amplitude_retention_summary(
+    start_event: str,
+    return_event: str,
+    start_date: str,
+    end_date: str,
+    api_key: Optional[str] = None,
+    secret_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get retention summary with key metrics
+    
+    Args:
+        start_event: Initial event that defines the cohort
+        return_event: Event that defines user return/retention
+        start_date: Start date in YYYYMMDD format
+        end_date: End date in YYYYMMDD format
+        api_key: Amplitude API key (optional if set in environment)
+        secret_key: Amplitude secret key (optional if set in environment)
+    
+    Returns:
+        Key retention metrics and summary
+    """
+    if not api_key:
+        api_key = settings.amplitude_api_key
+    if not secret_key:
+        secret_key = settings.amplitude_secret_key
+    return await amplitude_retention_summary(start_event, return_event, start_date, end_date, api_key, secret_key)
+
+
+@mcp.tool()
+async def get_amplitude_events_list(
+    include_deleted: bool = False,
+    api_key: Optional[str] = None,
+    secret_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get a complete list of all event types in the Amplitude project
+    
+    Args:
+        include_deleted: Whether to include deleted/inactive events (default: False)
+        api_key: Amplitude API key (optional if set in environment)
+        secret_key: Amplitude secret key (optional if set in environment)
+    
+    Returns:
+        Complete list of event names and metadata for discovery and analysis
+    """
+    if not api_key:
+        api_key = settings.amplitude_api_key
+    if not secret_key:
+        secret_key = settings.amplitude_secret_key
+    return await amplitude_events_list(include_deleted, api_key, secret_key)
+
+
+@mcp.tool()
+async def get_amplitude_event_details(
+    event_name: str,
+    api_key: Optional[str] = None,
+    secret_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get detailed information about a specific Amplitude event
+    
+    Args:
+        event_name: Name of the event to get details for
+        api_key: Amplitude API key (optional if set in environment)
+        secret_key: Amplitude secret key (optional if set in environment)
+    
+    Returns:
+        Detailed event information including properties, description, and category
+    """
+    if not api_key:
+        api_key = settings.amplitude_api_key
+    if not secret_key:
+        secret_key = settings.amplitude_secret_key
+    return await amplitude_event_details(event_name, api_key, secret_key)
 
 
 # Run the server

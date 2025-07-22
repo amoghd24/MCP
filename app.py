@@ -15,8 +15,8 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage
 
-# Judgeval imports for tracing
-from judgeval.tracer import Tracer, wrap
+# Judgeval imports for tracing - TEMPORARILY DISABLED
+# from judgeval.tracer import Tracer, wrap
 
 # Apply nest_asyncio to allow nested event loops (needed for Jupyter/IPython)
 nest_asyncio.apply()
@@ -24,8 +24,21 @@ nest_asyncio.apply()
 # Load environment variables
 load_dotenv(".env")
 
-# Initialize Judgeval tracer
-judgment = Tracer(project_name="mcp-integration-hub")
+# Initialize Judgeval tracer - TEMPORARILY DISABLED
+# judgment = Tracer(project_name="mcp-integration-hub")
+
+# Dummy decorator to replace @judgment.observe
+def dummy_observe(span_type=None):
+    def decorator(func):
+        return func
+    return decorator
+
+# Replace judgment with dummy
+class DummyJudgment:
+    def observe(self, span_type=None):
+        return dummy_observe(span_type)
+
+judgment = DummyJudgment()
 
 
 def create_pydantic_model_from_schema(name: str, schema: Dict[str, Any]) -> Type[BaseModel]:
@@ -72,16 +85,9 @@ class MCPLangChainClient:
         self.session: Optional[ClientSession] = None
         self.exit_stack = AsyncExitStack()
         
-        # Initialize OpenAI client with Judgeval tracing
+        # Initialize OpenAI client - TRACING DISABLED
         self.llm = ChatOpenAI(model=model, temperature=0)
-        # Wrap the actual OpenAI client (not the completions resource)
-        if hasattr(self.llm, '_client'):
-            self.llm._client = wrap(self.llm._client)
-        else:
-            # Fallback: create wrapped OpenAI client directly
-            from openai import OpenAI
-            wrapped_client = wrap(OpenAI())
-            self.llm.client = wrapped_client
+        # Removed judgeval wrapping that was causing issues
         
         self.stdio: Optional[Any] = None
         self.write: Optional[Any] = None
@@ -120,15 +126,13 @@ class MCPLangChainClient:
 
         # List available tools and convert to LangChain format
         tools_result = await self.session.list_tools()
-        print("\nConnected to server with tools:")
         
         # Create LangChain tools from MCP tools
         langchain_tools = []
         for tool in tools_result.tools:
-            print(f"  - {tool.name}: {tool.description}")
             
-            # Create a function that calls the MCP tool
-            async def create_tool_func(tool_name: str):
+            # Create a function that calls the MCP tool - FIXED VERSION
+            def create_tool_func(tool_name: str):
                 async def tool_func(**kwargs) -> str:
                     try:
                         result = await self.session.call_tool(tool_name, arguments=kwargs)
@@ -143,12 +147,12 @@ class MCPLangChainClient:
                 tool.inputSchema or {"properties": {}, "required": []}
             )
             
-            # Create a StructuredTool
+            # Create a StructuredTool - FIXED: Don't await the function creation!
             lc_tool = StructuredTool(
                 name=tool.name,
                 description=tool.description,
                 args_schema=args_model,
-                coroutine=await create_tool_func(tool.name)
+                coroutine=create_tool_func(tool.name)  # Remove await here!
             )
             langchain_tools.append(lc_tool)
         
@@ -156,7 +160,16 @@ class MCPLangChainClient:
         self.agent_executor = create_react_agent(
             self.llm, 
             langchain_tools,
-            state_modifier="You are a helpful assistant"
+            state_modifier="""You are a proactive analytics assistant specializing in data analysis and dashboard creation.
+
+IMPORTANT INSTRUCTIONS:
+1. Always USE available tools to gather actual data rather than giving generic responses
+2. When asked to create dashboards or analyze data, immediately start using tools to collect information
+3. For Amplitude analytics, start by discovering available events using get_amplitude_events_list
+4. Then proceed with specific analysis based on the user's requirements
+5. Be thorough and provide actual data-driven insights, not just plans or suggestions
+
+Available tools include Amplitude analytics, Notion, Slack, and GitHub integrations. Use them actively to fulfill user requests."""
         )
 
     @judgment.observe(span_type="agent_query")
@@ -172,29 +185,12 @@ class MCPLangChainClient:
         if not self.agent_executor:
             raise ValueError("Agent not initialized. Call connect_to_server first.")
         
-        print("\nExecuting ReAct agent...")
+        # Execute ReAct agent - SIMPLIFIED WITHOUT TRACING INTERFERENCE
+        agent_input = {"messages": [HumanMessage(content=query)]}
         
-        # Initialize agent input
-        agent_input = await self._init_agent_input(query)
-        
-        # Variable to store the final response
-        self.final_response = None
-        
-        # Stream and trace each step
-        async for chunk in self.agent_executor.astream(agent_input):
-            if "agent" in chunk:
-                await self._trace_agent_reasoning(chunk["agent"])
-                # Capture the final response from the last agent message
-                if chunk.get("agent", {}).get("messages"):
-                    self.final_response = chunk["agent"]["messages"][-1].content
-            
-            if "tools" in chunk:
-                await self._trace_tool_calls(chunk["tools"])
-        
-        # Get final response
-        final_message = await self._get_final_response(agent_input)
-        
-        return final_message
+        # Direct execution without streaming to avoid tracing issues
+        result = await self.agent_executor.ainvoke(agent_input)
+        return result["messages"][-1].content
 
     @judgment.observe(span_type="agent_init")
     async def _init_agent_input(self, query: str):
@@ -205,42 +201,26 @@ class MCPLangChainClient:
     @judgment.observe(span_type="final_response")
     async def _get_final_response(self, agent_input):
         """Get final response with tracing"""
-        # LEGACY: This causes a duplicate execution of the agent
-        # result = await self.agent_executor.ainvoke(agent_input)
-        # return result["messages"][-1].content
-        
-        # Return the captured final response
-        if self.final_response:
-            return self.final_response
-        else:
-            return "Task completed, but unable to capture the final response."
+        # Simplified without duplicate execution
+        result = await self.agent_executor.ainvoke(agent_input)
+        return result["messages"][-1].content
 
     @judgment.observe(span_type="agent_reasoning")
     async def _trace_agent_reasoning(self, agent_chunk):
         """Trace agent's reasoning steps"""
-        for message in agent_chunk["messages"]:
-            if hasattr(message, "content") and message.content:
-                print(f"\nAgent: {message.content}")
+        # Disabled - no tracing
+        pass
 
     @judgment.observe(span_type="tool_execution")
     async def _trace_tool_calls(self, tools_chunk):
         """Trace individual tool calls"""
-        for message in tools_chunk["messages"]:
-            if hasattr(message, "name"):
-                tool_name = message.name
-                tool_response = message.content
-                
-                # Execute individual tool tracing
-                await self._trace_individual_tool(tool_name, tool_response)
+        # Disabled - no tracing
+        pass
 
     async def _trace_individual_tool(self, tool_name: str, tool_response: str):
         """Trace a specific tool call"""
-        # Create a dynamic span type for each tool
-        @judgment.observe(span_type=f"tool_{tool_name}")
-        async def execute_tool_trace():
-            print(f"\nTool ({tool_name}): {tool_response[:200]}...")
-        
-        await execute_tool_trace()
+        # Disabled - no tracing
+        pass
 
     @judgment.observe(span_type="cleanup")
     async def cleanup(self):
@@ -255,12 +235,12 @@ async def main():
     
     try:
         # Connect to the MCP server
-        print("Connecting to MCP server...")
+        # Connect to the MCP server
         await client.connect_to_server("src/server.py")
         
         # Execute the GitHub PR analysis and Slack notification query
-        query = "Analyze all closed pull requests in amoghd24/MCP repo and send their titles and description on slack random channel. Your task is only complete once you send the message on slack. no need to add human in the loop"
-        print(f"\nQuery: {query}")
+        query = "Monitor our key user metrics. create a thorough report from 1 july 2025 to 20 july 2025 on a weekly basis, and tell the about our gains and things i need to worry abot"
+        # Process query
         
         response = await client.process_query(query)
         print(f"\nFinal Response: {response}")

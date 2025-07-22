@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     slack_bot_token: Optional[str] = None
     github_token: Optional[str] = None
     openai_api_key: Optional[str] = None  # Added for MCP client testing
+    amplitude_api_key: Optional[str] = None
+    amplitude_secret_key: Optional[str] = None
 
     
     # Judgeval Configuration (Optional - for tracing and monitoring)
