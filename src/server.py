@@ -48,7 +48,7 @@ from src.tools.amplitude.retention import (
 from src.tools.amplitude.users import (
     get_amplitude_users as amplitude_users
 )
-from src.tools.amplitude.taxonomy import (
+from src.tools.amplitude.get_events import (
     get_amplitude_events_list as amplitude_events_list,
     get_amplitude_event_details as amplitude_event_details
 )
