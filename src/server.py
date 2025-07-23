@@ -44,6 +44,10 @@ from src.tools.amplitude.get_events import (
     get_amplitude_events_list as amplitude_events_list,
     get_amplitude_event_details as amplitude_event_details
 )
+from src.tools.amplitude.segmentation import (
+    get_amplitude_event_segmentation as amplitude_event_segmentation,
+    get_amplitude_event_segmentation_simple as amplitude_event_segmentation_simple
+)
 
 # Create an MCP server
 mcp = FastMCP(
@@ -435,6 +439,83 @@ async def get_amplitude_event_details(
     if not secret_key:
         secret_key = settings.amplitude_secret_key
     return await amplitude_event_details(event_name, api_key, secret_key)
+
+
+@mcp.tool()
+async def get_amplitude_event_segmentation(
+    events: List[Dict[str, str]],
+    start_date: str,
+    end_date: str,
+    metric: str = "uniques",
+    group_by: Optional[str] = None,
+    group_by_2: Optional[str] = None,
+    segments: Optional[List[Dict[str, Any]]] = None,
+    interval: int = 1,
+    limit: int = 100,
+    api_key: Optional[str] = None,
+    secret_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get event segmentation data from Amplitude with property breakdown
+    
+    Args:
+        events: List of event definitions (1-2 events). Each event should have 'event_type' key
+        start_date: Start date in YYYYMMDD format
+        end_date: End date in YYYYMMDD format
+        metric: Metric type - 'uniques', 'totals', 'pct_dau', 'average', 'histogram', 'sums', 'value_avg', or 'formula'
+        group_by: Property to segment by (e.g., 'country', 'gp:utm_campaign')
+        group_by_2: Second property to segment by (optional)
+        segments: Optional segment definitions for filtering
+        interval: Time interval (1=daily, 7=weekly, 30=monthly, -300000=realtime, -3600000=hourly)
+        limit: Maximum number of group by values returned (default 100, max 1000)
+        api_key: Amplitude API key (optional if set in environment)
+        secret_key: Amplitude secret key (optional if set in environment)
+    
+    Returns:
+        Dictionary containing segmentation data with series, labels, and insights
+    """
+    if not api_key:
+        api_key = settings.amplitude_api_key
+    if not secret_key:
+        secret_key = settings.amplitude_secret_key
+    return await amplitude_event_segmentation(
+        events, start_date, end_date, metric, group_by, group_by_2, 
+        segments, interval, limit, api_key, secret_key
+    )
+
+
+@mcp.tool()
+async def get_amplitude_event_segmentation_simple(
+    event_name: str,
+    start_date: str,
+    end_date: str,
+    group_by: str,
+    metric: str = "uniques",
+    api_key: Optional[str] = None,
+    secret_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Simplified event segmentation for a single event with one group by property
+    
+    Args:
+        event_name: Name of the event to analyze
+        start_date: Start date in YYYYMMDD format
+        end_date: End date in YYYYMMDD format
+        group_by: Property to segment by (e.g., 'country', 'device_type')
+        metric: Metric type (default: 'uniques')
+        api_key: Amplitude API key (optional if set in environment)
+        secret_key: Amplitude secret key (optional if set in environment)
+    
+    Returns:
+        Simplified segmentation data with insights
+    """
+    if not api_key:
+        api_key = settings.amplitude_api_key
+    if not secret_key:
+        secret_key = settings.amplitude_secret_key
+    return await amplitude_event_segmentation_simple(
+        event_name, start_date, end_date, group_by, metric, api_key, secret_key
+    )
 
 
 # Run the server
