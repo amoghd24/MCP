@@ -3,11 +3,15 @@ Amplitude Retention Analysis API tool
 Provides user retention and cohort analysis capabilities
 """
 
-import os
 from typing import Dict, Any, Optional
-from datetime import datetime
 
 from .client import AmplitudeClient
+from .utils import (
+    get_api_credentials,
+    validate_date_format,
+    validate_retention_type,
+    create_error_response
+)
 
 
 async def get_amplitude_retention(
@@ -37,30 +41,24 @@ async def get_amplitude_retention(
         Dictionary containing retention analysis data
     """
     # Get API credentials
-    api_key = api_key or os.getenv("AMPLITUDE_API_KEY")
-    secret_key = secret_key or os.getenv("AMPLITUDE_SECRET_KEY")
+    api_key, secret_key, error = get_api_credentials(api_key, secret_key)
+    if error:
+        return error
     
-    if not api_key or not secret_key:
-        return {
-            "error": "Missing Amplitude API credentials",
-            "message": "Please provide api_key and secret_key, or set AMPLITUDE_API_KEY and AMPLITUDE_SECRET_KEY environment variables"
-        }
-    
-    # Validate date format
-    try:
-        datetime.strptime(start_date, "%Y%m%d")
-        datetime.strptime(end_date, "%Y%m%d")
-    except ValueError:
-        return {
-            "error": "Invalid date format",
-            "message": "Dates must be in YYYYMMDD format (e.g., '20240101')"
-        }
+    # Validate inputs
+    date_error = validate_date_format(start_date, end_date)
+    if date_error:
+        return date_error
     
     if not start_event or not return_event:
-        return {
-            "error": "Missing events",
-            "message": "Both start_event and return_event must be specified"
-        }
+        return create_error_response(
+            "Missing events",
+            "Both start_event and return_event must be specified"
+        )
+    
+    retention_error = validate_retention_type(retention_type)
+    if retention_error:
+        return retention_error
     
     client = AmplitudeClient(api_key, secret_key)
     
@@ -87,10 +85,10 @@ async def get_amplitude_retention(
         return result
         
     except Exception as e:
-        return {
-            "error": "Failed to get retention analysis data",
-            "message": str(e)
-        }
+        return create_error_response(
+            "Failed to get retention analysis data",
+            str(e)
+        )
     finally:
         await client.close()
 

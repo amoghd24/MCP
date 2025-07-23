@@ -3,11 +3,16 @@ Amplitude User Count API tool
 Provides active and new user count capabilities
 """
 
-import os
 from typing import Dict, Any, Optional
-from datetime import datetime
 
 from .client import AmplitudeClient
+from .utils import (
+    get_api_credentials,
+    validate_date_format,
+    validate_metric_type,
+    validate_interval,
+    create_error_response
+)
 
 
 async def get_amplitude_users(
@@ -37,38 +42,22 @@ async def get_amplitude_users(
         Dictionary containing user count data with formatted results
     """
     # Get API credentials
-    api_key = api_key or os.getenv("AMPLITUDE_API_KEY")
-    secret_key = secret_key or os.getenv("AMPLITUDE_SECRET_KEY")
+    api_key, secret_key, error = get_api_credentials(api_key, secret_key)
+    if error:
+        return error
     
-    if not api_key or not secret_key:
-        return {
-            "error": "Missing Amplitude API credentials",
-            "message": "Please provide api_key and secret_key, or set AMPLITUDE_API_KEY and AMPLITUDE_SECRET_KEY environment variables"
-        }
+    # Validate inputs
+    date_error = validate_date_format(start_date, end_date)
+    if date_error:
+        return date_error
     
-    # Validate date format
-    try:
-        datetime.strptime(start_date, "%Y%m%d")
-        datetime.strptime(end_date, "%Y%m%d")
-    except ValueError:
-        return {
-            "error": "Invalid date format",
-            "message": "Dates must be in YYYYMMDD format (e.g., '20240101')"
-        }
+    metric_error = validate_metric_type(metric, ["active", "new"])
+    if metric_error:
+        return metric_error
     
-    # Validate metric type
-    if metric not in ["active", "new"]:
-        return {
-            "error": "Invalid metric type",
-            "message": "Metric must be either 'active' or 'new'"
-        }
-    
-    # Validate interval
-    if interval not in [1, 7, 30]:
-        return {
-            "error": "Invalid interval",
-            "message": "Interval must be 1 (daily), 7 (weekly), or 30 (monthly)"
-        }
+    interval_error = validate_interval(interval, [1, 7, 30])
+    if interval_error:
+        return interval_error
     
     client = AmplitudeClient(api_key, secret_key)
     
@@ -91,10 +80,10 @@ async def get_amplitude_users(
         return result
         
     except Exception as e:
-        return {
-            "error": "Failed to get user count data",
-            "message": str(e)
-        }
+        return create_error_response(
+            "Failed to get user count data",
+            str(e)
+        )
     finally:
         await client.close()
 

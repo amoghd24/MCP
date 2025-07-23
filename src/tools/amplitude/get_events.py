@@ -3,10 +3,14 @@ Amplitude Events API tool
 Provides event discovery capabilities using the events/list endpoint
 """
 
-import os
 from typing import Dict, Any, Optional, List
 
 from .client import AmplitudeClient
+from .utils import (
+    get_api_credentials,
+    create_error_response,
+    add_query_metadata
+)
 
 
 async def get_amplitude_events_list(
@@ -29,14 +33,9 @@ async def get_amplitude_events_list(
         - Event status (active/inactive, hidden, etc.)
     """
     # Get API credentials
-    api_key = api_key or os.getenv("AMPLITUDE_API_KEY")
-    secret_key = secret_key or os.getenv("AMPLITUDE_SECRET_KEY")
-    
-    if not api_key or not secret_key:
-        return {
-            "error": "Missing Amplitude API credentials",
-            "message": "Please provide api_key and secret_key, or set AMPLITUDE_API_KEY and AMPLITUDE_SECRET_KEY environment variables"
-        }
+    api_key, secret_key, error = get_api_credentials(api_key, secret_key)
+    if error:
+        return error
     
     client = AmplitudeClient(api_key, secret_key)
     
@@ -52,10 +51,10 @@ async def get_amplitude_events_list(
         return result
         
     except Exception as e:
-        return {
-            "error": "Failed to get events list from Amplitude",
-            "message": str(e)
-        }
+        return create_error_response(
+            "Failed to get events list from Amplitude",
+            str(e)
+        )
     finally:
         await client.close()
 
@@ -85,20 +84,21 @@ async def get_amplitude_event_details(
     # Find the specific event
     for event in all_events.get("events", []):
         if event.get("name", "").lower() == event_name.lower():
-            return {
+            result = {
                 "success": True,
-                "event": event,
-                "query_info": {
-                    "event_name": event_name,
-                    "query_type": "event_details"
-                }
+                "event": event
             }
+            return add_query_metadata(
+                result,
+                "event_details",
+                event_name=event_name
+            )
     
-    return {
-        "error": "Event not found",
-        "message": f"Event '{event_name}' not found in visible events",
-        "suggestion": "Use get_amplitude_events_list() to see all available events"
-    }
+    return create_error_response(
+        "Event not found",
+        f"Event '{event_name}' not found in visible events",
+        suggestion="Use get_amplitude_events_list() to see all available events"
+    )
 
 
 def _process_events_list_response(raw_response: Dict[str, Any]) -> Dict[str, Any]:
@@ -164,11 +164,11 @@ def _process_events_list_response(raw_response: Dict[str, Any]) -> Dict[str, Any
         return processed
         
     except Exception as e:
-        return {
-            "error": "Failed to process events list response",
-            "message": str(e),
-            "raw_response": raw_response
-        }
+        return create_error_response(
+            "Failed to process events list response",
+            str(e),
+            raw_response=raw_response
+        )
 
 
 def _generate_events_insights(processed_data: Dict[str, Any]) -> List[str]:
