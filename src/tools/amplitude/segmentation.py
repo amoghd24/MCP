@@ -4,6 +4,8 @@ Provides event segmentation analysis capabilities
 """
 
 import os
+import json
+import asyncio
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
@@ -11,12 +13,19 @@ from .client import AmplitudeClient
 
 
 async def get_amplitude_event_segmentation(
+    events: List[str],
     start_date: str,
     end_date: str,
-    events: List[str],
-    segments: Optional[List[str]] = None,
-    group_by: Optional[str] = None,
+    metric: str = "uniques",
+    user_type: str = "any",
     interval: str = "daily",
+    segments: Optional[List[Dict[str, Any]]] = None,
+    group_by: Optional[str] = None,
+    group_by_2: Optional[str] = None,
+    limit: int = 100,
+    formula: Optional[str] = None,
+    rolling_window: Optional[int] = None,
+    rolling_average: Optional[int] = None,
     api_key: Optional[str] = None,
     secret_key: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -24,111 +33,109 @@ async def get_amplitude_event_segmentation(
     Get event segmentation data from Amplitude Dashboard API
     
     Args:
-        start_date: Start date in YYYYMMDD format (e.g., "20240101")
-        end_date: End date in YYYYMMDD format (e.g., "20240131")
-        events: List of event names to analyze (up to 2 events)
-        segments: Optional list of segment names to filter by
-        group_by: Optional property to group results by
-        interval: Interval type - "daily", "weekly", or "monthly"
-        api_key: Amplitude API key (optional if set in environment)
-        secret_key: Amplitude secret key (optional if set in environment)
+        events: List of event names (max 2)
+        start_date: Start date in YYYYMMDD format
+        end_date: End date in YYYYMMDD format
+        metric: "uniques", "totals", "pct_dau", "average", "histogram", "sums", "value_avg", "formula"
+        user_type: "any" or "active"
+        interval: "daily", "weekly", "monthly", "hourly", "realtime"
+        segments: Optional segment definitions
+        group_by: Optional property to group by
+        group_by_2: Optional second property to group by
+        limit: Group by values returned (1-1000)
+        formula: Required if metric is "formula"
+        rolling_window: Rolling window in days/weeks/months
+        rolling_average: Rolling average in days/weeks/months
+        api_key: Amplitude API key
+        secret_key: Amplitude secret key
     
     Returns:
-        Dictionary containing event segmentation data including:
-        - Event counts over time
-        - Unique user counts
-        - Total values
-        - Segmented breakdowns (if segments provided)
+        Dictionary with series, seriesLabels, seriesCollapsed, xValues
     """
-    # Get API credentials
+    # Get credentials
     api_key = api_key or os.getenv("AMPLITUDE_API_KEY")
     secret_key = secret_key or os.getenv("AMPLITUDE_SECRET_KEY")
     
     if not api_key or not secret_key:
-        return {
-            "error": "Missing Amplitude API credentials",
-            "message": "Please provide api_key and secret_key, or set AMPLITUDE_API_KEY and AMPLITUDE_SECRET_KEY environment variables"
-        }
+        return {"error": "Missing Amplitude API credentials"}
     
-    # Validate date format
+    # Validate inputs
     try:
         datetime.strptime(start_date, "%Y%m%d")
         datetime.strptime(end_date, "%Y%m%d")
     except ValueError:
-        return {
-            "error": "Invalid date format",
-            "message": "Dates must be in YYYYMMDD format (e.g., '20240101')"
-        }
+        return {"error": "Dates must be in YYYYMMDD format"}
     
-    # Validate events limit for segmentation
-    if len(events) > 2:
-        return {
-            "error": "Too many events",
-            "message": "Amplitude Event Segmentation API supports maximum 2 events"
-        }
+    if not events or len(events) > 2:
+        return {"error": "Provide 1-2 events only"}
     
-    if not events:
-        return {
-            "error": "No events provided",
-            "message": "At least one event must be specified"
-        }
+    valid_metrics = ["uniques", "totals", "pct_dau", "average", "histogram", "sums", "value_avg", "formula"]
+    if metric not in valid_metrics:
+        return {"error": f"Invalid metric. Use: {', '.join(valid_metrics)}"}
     
-    # Convert interval to Amplitude format
-    interval_map = {
-        "daily": 1,
-        "weekly": 7,
-        "monthly": 30
-    }
+    if metric == "formula" and not formula:
+        return {"error": "Formula required when metric is 'formula'"}
     
+    if user_type not in ["any", "active"]:
+        return {"error": "user_type must be 'any' or 'active'"}
+    
+    interval_map = {"realtime": -300000, "hourly": -3600000, "daily": 1, "weekly": 7, "monthly": 30}
     if interval not in interval_map:
-        return {
-            "error": "Invalid interval",
-            "message": "Interval must be 'daily', 'weekly', or 'monthly'"
-        }
+        return {"error": f"Invalid interval. Use: {', '.join(interval_map.keys())}"}
     
-    interval_value = interval_map[interval]
+    if not 1 <= limit <= 1000:
+        return {"error": "Limit must be 1-1000"}
     
+    # Make API call
     client = AmplitudeClient(api_key, secret_key)
-    
     try:
-        # Convert events to Amplitude format
-        event_definitions = []
-        for event in events:
-            event_definitions.append({
-                "event_type": event
-            })
+        # Build parameters
+        params = {
+            "start": start_date,
+            "end": end_date,
+            "m": metric,
+            "n": user_type,
+            "i": interval_map[interval],
+            "limit": limit
+        }
         
-        # Convert segments to Amplitude format if provided
-        segment_definitions = None
+        # Add events
+        if len(events) >= 1:
+            params["e"] = json.dumps({"event_type": events[0]})
+        if len(events) >= 2:
+            params["e2"] = json.dumps({"event_type": events[1]})
+        
+        # Add optional parameters
         if segments:
-            segment_definitions = []
-            for segment in segments:
-                # Basic segment definition - can be extended for more complex segments
-                segment_definitions.append({
-                    "prop": segment,
-                    "op": "is",
-                    "values": ["*"]  # Match all values for this property
-                })
+            params["s"] = json.dumps(segments)
+        if group_by:
+            params["g"] = group_by
+        if group_by_2:
+            params["g2"] = group_by_2
+        if formula:
+            params["formula"] = formula
+        if rolling_window:
+            params["rollingWindow"] = rolling_window
+        if rolling_average:
+            params["rollingAverage"] = rolling_average
         
-        # Make the API call
-        result = await client.get_event_segmentation(
-            start_date=start_date,
-            end_date=end_date,
-            events=event_definitions,
-            segments=segment_definitions,
-            group_by=group_by,
-            interval=interval_value,
-            user_id="mcp_user"  # Default user ID for rate limiting
-        )
+        # Calculate cost and make request
+        days = client._calculate_days(start_date, end_date)
+        conditions = len(segments) if segments else 1
+        base_cost = len(events) * 1
+        group_cost = 4 * (bool(group_by) + bool(group_by_2))
+        cost = client.calculate_cost(days, conditions, base_cost + group_cost)
         
-        # Add metadata to response
+        result = await client._make_request("events/segmentation", params, "mcp_user", cost)
+        
+        # Add metadata
         if "error" not in result:
             result["query_info"] = {
-                "start_date": start_date,
-                "end_date": end_date,
                 "events": events,
-                "segments": segments,
-                "group_by": group_by,
+                "start_date": start_date, 
+                "end_date": end_date,
+                "metric": metric,
+                "user_type": user_type,
                 "interval": interval,
                 "query_type": "event_segmentation"
             }
@@ -136,10 +143,7 @@ async def get_amplitude_event_segmentation(
         return result
         
     except Exception as e:
-        return {
-            "error": "Failed to get event segmentation data",
-            "message": str(e)
-        }
+        return {"error": f"API request failed: {str(e)}"}
     finally:
         await client.close()
 
@@ -152,54 +156,87 @@ async def get_amplitude_event_totals(
     secret_key: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Get event totals for a quick summary (wrapper around event segmentation)
+    Get event totals for multiple events (convenience function)
     
     Args:
         start_date: Start date in YYYYMMDD format
-        end_date: End date in YYYYMMDD format  
-        events: List of event names to get totals for
-        api_key: Amplitude API key (optional)
-        secret_key: Amplitude secret key (optional)
+        end_date: End date in YYYYMMDD format
+        events: List of event names
+        api_key: Amplitude API key
+        secret_key: Amplitude secret key
     
     Returns:
-        Dictionary with event totals and unique user counts
+        Dictionary with event totals
     """
-    result = await get_amplitude_event_segmentation(
-        start_date=start_date,
-        end_date=end_date,
-        events=events,
-        segments=None,
-        group_by=None,
-        interval="daily",
-        api_key=api_key,
-        secret_key=secret_key
-    )
     
-    if "error" in result:
-        return result
-    
-    # Extract totals from the segmentation result
-    try:
+    if len(events) <= 2:
+        # Single request
+        result = await get_amplitude_event_segmentation(
+            events=events,
+            start_date=start_date,
+            end_date=end_date,
+            metric="totals",
+            api_key=api_key,
+            secret_key=secret_key
+        )
+        
+        if "error" in result:
+            return result
+        
+        # Extract totals
         totals = {}
         if "data" in result:
-            series = result["data"].get("series", [])
+            series_collapsed = result["data"].get("seriesCollapsed", [])
             for i, event in enumerate(events):
-                if i < len(series):
-                    event_data = series[i]
+                if i < len(series_collapsed) and series_collapsed[i]:
                     totals[event] = {
-                        "total_events": sum(event_data.get("values", [])),
-                        "unique_users": sum(event_data.get("unique_users", [])) if "unique_users" in event_data else None
+                        "total_events": series_collapsed[i][0].get("value", 0),
+                        "metric_type": "totals"
                     }
+        
+        return {"success": True, "totals": totals}
+    
+    else:
+        # Multiple requests for >2 events
+        event_pairs = [events[i:i+2] for i in range(0, len(events), 2)]
+        
+        tasks = [
+            get_amplitude_event_segmentation(
+                events=pair,
+                start_date=start_date,
+                end_date=end_date,
+                metric="totals",
+                api_key=api_key,
+                secret_key=secret_key
+            )
+            for pair in event_pairs
+        ]
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Combine results
+        all_totals = {}
+        failed_requests = []
+        
+        for i, result in enumerate(results):
+            event_pair = event_pairs[i]
+            
+            if isinstance(result, Exception):
+                failed_requests.extend([{"event": event, "error": str(result)} for event in event_pair])
+            elif isinstance(result, dict) and "error" not in result and "data" in result:
+                series_collapsed = result["data"].get("seriesCollapsed", [])
+                for j, event in enumerate(event_pair):
+                    if j < len(series_collapsed) and series_collapsed[j]:
+                        all_totals[event] = {
+                            "total_events": series_collapsed[j][0].get("value", 0),
+                            "metric_type": "totals"
+                        }
+            elif isinstance(result, dict) and "error" in result:
+                failed_requests.extend([{"event": event, "error": result["error"]} for event in event_pair])
         
         return {
             "success": True,
-            "totals": totals,
-            "query_info": result.get("query_info", {})
-        }
-        
-    except Exception as e:
-        return {
-            "error": "Failed to extract totals",
-            "message": str(e),
-            "raw_result": result
+            "totals": all_totals,
+            "processed_events": len(events),
+            "failed_requests": failed_requests if failed_requests else None
         }
