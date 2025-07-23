@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     # API Keys (Optional - can be provided per request)
     notion_api_key: Optional[str] = None
     slack_bot_token: Optional[str] = None
+    slack_app_token: Optional[str] = None  # For Slack Socket Mode
+    slack_signing_secret: Optional[str] = None  # For Slack request verification
     github_token: Optional[str] = None
     openai_api_key: Optional[str] = None  # Added for MCP client testing
     amplitude_api_key: Optional[str] = None
