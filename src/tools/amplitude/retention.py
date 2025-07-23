@@ -123,9 +123,6 @@ def _format_retention_table(data: Dict[str, Any]) -> str:
             retention_data = []
             
             for i, period in enumerate(combined):
-                if i == 0:
-                    continue  # Skip Day 0 (100%)
-                
                 count = period.get("count", 0)
                 outof = period.get("outof", 0)
                 incomplete = period.get("incomplete", False)
@@ -153,7 +150,7 @@ def _format_retention_table(data: Dict[str, Any]) -> str:
             retention_periods = []
             
             # Skip the first two entries (both Day 0 - 100%) and process retention periods
-            for i in range(2, len(cohort_data)):
+            for i in range(1, len(cohort_data)):
                 period = cohort_data[i]
                 count = period.get("count", 0)
                 outof = period.get("outof", 0)

@@ -456,3 +456,25 @@ class AmplitudeClient:
             params["showDeleted"] = "true"
         
         return await self._make_request("taxonomy/event", params, user_id, cost)
+
+    async def get_events_list(
+        self,
+        user_id: str = "default"
+    ) -> Dict[str, Any]:
+        """Get list of visible events with current week's totals using Events List API
+        
+        This is a simpler alternative to the Taxonomy API for basic event discovery.
+        Returns events with current week's totals, uniques, and % DAU.
+        Only visible events are returned (hidden events are excluded).
+        
+        Args:
+            user_id: User ID for rate limiting
+            
+        Returns:
+            List of visible events with current week's metrics
+        """
+        # Events List API has cost of 1 for GET requests
+        cost = 1
+        
+        # No parameters needed for events/list endpoint
+        return await self._make_request("events/list", {}, user_id, cost)
