@@ -251,9 +251,13 @@ class AmplitudeClient:
         events: List[Dict[str, Any]],
         start_date: str,
         end_date: str,
+        mode: str = "ordered",
+        user_segment: str = "active",
+        conversion_window_seconds: int = 2592000,
+        interval: int = 1,
         segments: Optional[List[Dict[str, Any]]] = None,
         group_by: Optional[str] = None,
-        conversion_window_days: int = 7,
+        limit: int = 100,
         user_id: str = "default"
     ) -> Dict[str, Any]:
         """Get funnel analysis data
@@ -262,9 +266,13 @@ class AmplitudeClient:
             events: List of funnel step events
             start_date: Start date in YYYYMMDD format
             end_date: End date in YYYYMMDD format
+            mode: Funnel mode - "ordered", "unordered", or "sequential"
+            user_segment: User segment - "new" or "active" 
+            conversion_window_seconds: Conversion window in seconds (default 30 days)
+            interval: Time interval (-300000=realtime, -3600000=hourly, 1=daily, 7=weekly, 30=monthly)
             segments: Optional list of segments
             group_by: Optional property to group by
-            conversion_window_days: Conversion window in days
+            limit: Maximum number of group by values returned (1-1000)
             user_id: User ID for rate limiting
             
         Returns:
@@ -281,17 +289,27 @@ class AmplitudeClient:
         params = {
             "start": start_date,
             "end": end_date,
-            "cs": conversion_window_days * 24  # Convert days to hours
+            "cs": conversion_window_seconds,  # Conversion window in seconds
+            "i": interval
         }
         
+        # Add funnel mode (only if not default "ordered")
+        if mode != "ordered":
+            params["mode"] = mode
+            
+        # Add user segment (only if not default "active") 
+        if user_segment != "active":
+            params["n"] = user_segment
+        
         # Add events as multiple e parameters - funnel format uses repeated "e"
-        # httpx will automatically create multiple e= parameters from this list
-        params["e"] = [json.dumps({"event_type": event["event_type"]}) for event in events]
+        params["e"] = [{"event_type": event["event_type"]} for event in events]
         
         if segments:
             params["s"] = segments
         if group_by:
             params["g"] = group_by
+        if limit != 100:  # Only add if not default
+            params["limit"] = limit
         
         return await self._make_request("funnels", params, user_id, cost)
     
