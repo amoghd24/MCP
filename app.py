@@ -185,12 +185,48 @@ Available tools include Amplitude analytics, Notion, Slack, and GitHub integrati
         if not self.agent_executor:
             raise ValueError("Agent not initialized. Call connect_to_server first.")
         
-        # Execute ReAct agent - SIMPLIFIED WITHOUT TRACING INTERFERENCE
+        # Execute ReAct agent with streaming to capture reasoning steps
         agent_input = {"messages": [HumanMessage(content=query)]}
+        final_response = ""
+        last_agent_message = ""
         
-        # Direct execution without streaming to avoid tracing issues
-        result = await self.agent_executor.ainvoke(agent_input)
-        return result["messages"][-1].content
+        print("\n=== AGENT REASONING TRACE ===")
+        
+        # Stream the agent execution to capture reasoning steps
+        async for chunk in self.agent_executor.astream(agent_input):
+            # Print agent thoughts/reasoning
+            if 'agent' in chunk:
+                messages = chunk['agent'].get('messages', [])
+                for message in messages:
+                    if hasattr(message, 'content') and message.content.strip():
+                        print(f"💭 THOUGHT: {message.content}")
+                        # Capture the last meaningful agent message
+                        if not hasattr(message, 'tool_calls') or not message.tool_calls:
+                            last_agent_message = message.content
+                    # Print tool calls (actions)
+                    if hasattr(message, 'tool_calls') and message.tool_calls:
+                        for tool_call in message.tool_calls:
+                            print(f"🔧 ACTION: {tool_call['name']}({tool_call['args']})")
+            
+            # Print tool results (observations)
+            if 'tools' in chunk:
+                messages = chunk['tools'].get('messages', [])
+                for message in messages:
+                    if hasattr(message, 'content'):
+                        print(f"📝 OBSERVATION: {message.content}")
+            
+            # Capture final response from __end__ chunk
+            if '__end__' in chunk:
+                if chunk['__end__']['messages']:
+                    final_response = chunk['__end__']['messages'][-1].content
+        
+        print("=== END REASONING TRACE ===\n")
+        
+        # Use the last agent message if the __end__ chunk is empty
+        if not final_response.strip() and last_agent_message:
+            final_response = last_agent_message
+            
+        return final_response
 
     @judgment.observe(span_type="agent_init")
     async def _init_agent_input(self, query: str):
@@ -239,10 +275,17 @@ async def main():
         await client.connect_to_server("src/server.py")
         
         # Execute the GitHub PR analysis and Slack notification query
-        query = "Monitor our key user metrics. create a thorough report from 1 july 2025 to 20 july 2025 on a weekly basis, and tell the about our gains and things i need to worry abot"
+     
         # Process query
         
-        response = await client.process_query(query)
+        # Test the new users tool
+        query_test = """
+        Can you give me rolling retention report for the week of 14july 2025 to 20 july 2025. 
+
+        
+
+            """        
+        response = await client.process_query(query_test)
         print(f"\nFinal Response: {response}")
         
     except Exception as e:

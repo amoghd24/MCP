@@ -43,9 +43,10 @@ from src.tools.amplitude.funnels import (
     get_amplitude_conversion_summary as amplitude_conversion_summary
 )
 from src.tools.amplitude.retention import (
-    get_amplitude_retention as amplitude_retention,
-    get_amplitude_cohort_retention as amplitude_cohort_retention,
-    get_amplitude_retention_summary as amplitude_retention_summary
+    get_amplitude_retention as amplitude_retention
+)
+from src.tools.amplitude.users import (
+    get_amplitude_users as amplitude_users
 )
 from src.tools.amplitude.taxonomy import (
     get_amplitude_events_list as amplitude_events_list,
@@ -460,7 +461,7 @@ async def get_amplitude_retention(
     return_event: str,
     start_date: str,
     end_date: str,
-    retention_type: str = "retention_N_day",
+    retention_type: str = "n_day",
     api_key: Optional[str] = None,
     secret_key: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -472,7 +473,7 @@ async def get_amplitude_retention(
         return_event: Event that defines user return/retention
         start_date: Start date in YYYYMMDD format
         end_date: End date in YYYYMMDD format
-        retention_type: Type of retention analysis ("retention_N_day" or "retention_bracket")
+        retention_type: Type of retention analysis ("n_day", "rolling", "bracket", or "unbounded")
         api_key: Amplitude API key (optional if set in environment)
         secret_key: Amplitude secret key (optional if set in environment)
     
@@ -483,67 +484,43 @@ async def get_amplitude_retention(
         api_key = settings.amplitude_api_key
     if not secret_key:
         secret_key = settings.amplitude_secret_key
-    return await amplitude_retention(start_event, return_event, start_date, end_date, retention_type, api_key, secret_key)
+    return await amplitude_retention(start_event, return_event, start_date, end_date, retention_type, None, api_key, secret_key)
 
 
 @mcp.tool()
-async def get_amplitude_cohort_retention(
-    start_event: str,
-    return_event: str,
+async def get_amplitude_users(
     start_date: str,
     end_date: str,
+    metric: str = "active",
+    interval: int = 1,
+    segment_definitions: Optional[Dict[str, Any]] = None,
+    group_by: Optional[str] = None,
     api_key: Optional[str] = None,
     secret_key: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Get cohort retention analysis (N-day retention)
+    Get active or new user counts from Amplitude Dashboard API
     
     Args:
-        start_event: Initial event that defines the cohort
-        return_event: Event that defines user return/retention
-        start_date: Start date in YYYYMMDD format
-        end_date: End date in YYYYMMDD format
+        start_date: Start date in YYYYMMDD format (e.g., "20240101")
+        end_date: End date in YYYYMMDD format (e.g., "20240131")
+        metric: Either "active" or "new" to get the desired count. Defaults to "active"
+        interval: Either 1, 7, or 30 for daily, weekly, and monthly counts, respectively. Defaults to 1
+        segment_definitions: Optional segment definitions to filter users
+        group_by: Optional property to group by (e.g., "city", "country")
         api_key: Amplitude API key (optional if set in environment)
         secret_key: Amplitude secret key (optional if set in environment)
     
     Returns:
-        Cohort retention data with insights and recommendations
+        Dictionary containing user count data with formatted summary
     """
     if not api_key:
         api_key = settings.amplitude_api_key
     if not secret_key:
         secret_key = settings.amplitude_secret_key
-    return await amplitude_cohort_retention(start_event, return_event, start_date, end_date, api_key, secret_key)
+    return await amplitude_users(start_date, end_date, metric, interval, segment_definitions, group_by, api_key, secret_key)
 
 
-@mcp.tool()
-async def get_amplitude_retention_summary(
-    start_event: str,
-    return_event: str,
-    start_date: str,
-    end_date: str,
-    api_key: Optional[str] = None,
-    secret_key: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Get retention summary with key metrics
-    
-    Args:
-        start_event: Initial event that defines the cohort
-        return_event: Event that defines user return/retention
-        start_date: Start date in YYYYMMDD format
-        end_date: End date in YYYYMMDD format
-        api_key: Amplitude API key (optional if set in environment)
-        secret_key: Amplitude secret key (optional if set in environment)
-    
-    Returns:
-        Key retention metrics and summary
-    """
-    if not api_key:
-        api_key = settings.amplitude_api_key
-    if not secret_key:
-        secret_key = settings.amplitude_secret_key
-    return await amplitude_retention_summary(start_event, return_event, start_date, end_date, api_key, secret_key)
 
 
 @mcp.tool()
