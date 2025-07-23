@@ -48,6 +48,9 @@ from src.tools.amplitude.segmentation import (
     get_amplitude_event_segmentation as amplitude_event_segmentation,
     get_amplitude_event_segmentation_simple as amplitude_event_segmentation_simple
 )
+from src.tools.amplitude.funnel import (
+    get_amplitude_funnel as amplitude_funnel
+)
 
 # Create an MCP server
 mcp = FastMCP(
@@ -515,6 +518,51 @@ async def get_amplitude_event_segmentation_simple(
         secret_key = settings.amplitude_secret_key
     return await amplitude_event_segmentation_simple(
         event_name, start_date, end_date, group_by, metric, api_key, secret_key
+    )
+
+
+@mcp.tool()
+async def get_amplitude_funnel(
+    events: List[str],
+    start_date: str,
+    end_date: str,
+    mode: str = "ordered",
+    user_segment: str = "active",
+    conversion_window_days: int = 7,
+    interval: int = 1,
+    group_by: Optional[str] = None,
+    segments: Optional[List[Dict[str, Any]]] = None,
+    limit: int = 100,
+    api_key: Optional[str] = None,
+    secret_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get funnel analysis data from Amplitude with step-by-step conversion rates
+    
+    Args:
+        events: List of funnel step event names (minimum 2 events required)
+        start_date: Start date in YYYYMMDD format (e.g., "20240101")
+        end_date: End date in YYYYMMDD format (e.g., "20240131")
+        mode: Funnel mode - "ordered" (default), "unordered", or "sequential"
+        user_segment: User segment - "active" (default) or "new"
+        conversion_window_days: Time window for users to complete funnel (default 7 days, max 365)
+        interval: Time interval (1=daily, 7=weekly, 30=monthly, -300000=realtime, -3600000=hourly)
+        group_by: Optional property to segment by (e.g., 'country', 'gp:utm_campaign')
+        segments: Optional segment definitions for filtering
+        limit: Maximum number of group by values returned (default 100, max 1000)
+        api_key: Amplitude API key (optional if set in environment)
+        secret_key: Amplitude secret key (optional if set in environment)
+    
+    Returns:
+        Dictionary containing funnel conversion rates, user counts, transition times, and insights
+    """
+    if not api_key:
+        api_key = settings.amplitude_api_key
+    if not secret_key:
+        secret_key = settings.amplitude_secret_key
+    return await amplitude_funnel(
+        events, start_date, end_date, mode, user_segment, conversion_window_days,
+        interval, group_by, segments, limit, api_key, secret_key
     )
 
 

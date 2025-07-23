@@ -245,3 +245,82 @@ def validate_retention_type(retention_type: str) -> Optional[Dict[str, Any]]:
             f"Retention type must be one of: {', '.join(valid_types)}"
         )
     return None
+
+
+def validate_funnel_mode(mode: str) -> Optional[Dict[str, Any]]:
+    """
+    Validate funnel mode
+    
+    Args:
+        mode: Funnel mode to validate
+        
+    Returns:
+        Error dict if invalid, None if valid
+    """
+    valid_modes = ["ordered", "unordered", "sequential"]
+    if mode not in valid_modes:
+        return create_error_response(
+            "Invalid funnel mode",
+            f"Funnel mode must be one of: {', '.join(valid_modes)}"
+        )
+    return None
+
+
+def validate_user_segment(segment: str) -> Optional[Dict[str, Any]]:
+    """
+    Validate user segment for funnel analysis
+    
+    Args:
+        segment: User segment to validate
+        
+    Returns:
+        Error dict if invalid, None if valid
+    """
+    valid_segments = ["new", "active"]
+    if segment not in valid_segments:
+        return create_error_response(
+            "Invalid user segment",
+            f"User segment must be one of: {', '.join(valid_segments)}"
+        )
+    return None
+
+
+def validate_funnel_interval(interval: int) -> Optional[Dict[str, Any]]:
+    """
+    Validate interval for funnel analysis
+    
+    Args:
+        interval: Interval to validate
+        
+    Returns:
+        Error dict if invalid, None if valid
+    """
+    valid_intervals = [-300000, -3600000, 1, 7, 30]
+    if interval not in valid_intervals:
+        return create_error_response(
+            "Invalid funnel interval",
+            f"Interval must be one of: {', '.join(map(str, valid_intervals))} (realtime, hourly, daily, weekly, monthly)"
+        )
+    return None
+
+
+def validate_funnel_conversion_window(window_seconds: int) -> Optional[Dict[str, Any]]:
+    """
+    Validate conversion window for funnel analysis (in seconds)
+    
+    Args:
+        window_seconds: Conversion window in seconds
+        
+    Returns:
+        Error dict if invalid, None if valid
+    """
+    # Reasonable range: 1 hour to 1 year
+    min_seconds = 3600  # 1 hour
+    max_seconds = 31536000  # 1 year
+    
+    if window_seconds < min_seconds or window_seconds > max_seconds:
+        return create_error_response(
+            "Invalid conversion window",
+            f"Conversion window must be between {min_seconds} and {max_seconds} seconds (1 hour to 1 year)"
+        )
+    return None
