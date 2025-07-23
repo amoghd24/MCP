@@ -27,18 +27,6 @@ load_dotenv(".env")
 # Initialize Judgeval tracer - TEMPORARILY DISABLED
 # judgment = Tracer(project_name="mcp-integration-hub")
 
-# Dummy decorator to replace @judgment.observe
-def dummy_observe(span_type=None):
-    def decorator(func):
-        return func
-    return decorator
-
-# Replace judgment with dummy
-class DummyJudgment:
-    def observe(self, span_type=None):
-        return dummy_observe(span_type)
-
-judgment = DummyJudgment()
 
 
 def create_pydantic_model_from_schema(name: str, schema: Dict[str, Any]) -> Type[BaseModel]:
@@ -93,7 +81,6 @@ class MCPLangChainClient:
         self.write: Optional[Any] = None
         self.agent_executor = None
 
-    @judgment.observe(span_type="function")
     async def connect_to_server(self, server_script_path: str = "src/server.py"):
         """Connect to an MCP server and set up LangChain tools.
 
@@ -172,7 +159,6 @@ IMPORTANT INSTRUCTIONS:
 Available tools include Amplitude analytics, Notion, Slack, and GitHub integrations. Use them actively to fulfill user requests."""
         )
 
-    @judgment.observe(span_type="agent_query")
     async def process_query(self, query: str) -> str:
         """Process a query using the LangChain ReAct agent with detailed tracing.
 
@@ -228,26 +214,22 @@ Available tools include Amplitude analytics, Notion, Slack, and GitHub integrati
             
         return final_response
 
-    @judgment.observe(span_type="agent_init")
     async def _init_agent_input(self, query: str):
         """Initialize agent input with tracing"""
         messages = [HumanMessage(content=query)]
         return {"messages": messages}
 
-    @judgment.observe(span_type="final_response")
     async def _get_final_response(self, agent_input):
         """Get final response with tracing"""
         # Simplified without duplicate execution
         result = await self.agent_executor.ainvoke(agent_input)
         return result["messages"][-1].content
 
-    @judgment.observe(span_type="agent_reasoning")
     async def _trace_agent_reasoning(self, agent_chunk):
         """Trace agent's reasoning steps"""
         # Disabled - no tracing
         pass
 
-    @judgment.observe(span_type="tool_execution")
     async def _trace_tool_calls(self, tools_chunk):
         """Trace individual tool calls"""
         # Disabled - no tracing
@@ -258,13 +240,11 @@ Available tools include Amplitude analytics, Notion, Slack, and GitHub integrati
         # Disabled - no tracing
         pass
 
-    @judgment.observe(span_type="cleanup")
     async def cleanup(self):
         """Clean up resources."""
         await self.exit_stack.aclose()
 
 
-@judgment.observe(span_type="function")
 async def main():
     """Main entry point for the client."""
     client = MCPLangChainClient()
