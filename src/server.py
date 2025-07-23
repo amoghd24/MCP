@@ -52,6 +52,9 @@ from src.tools.amplitude.funnel import (
     get_amplitude_funnel as amplitude_funnel
 )
 
+# Import Utils tools
+from src.tools.utils.time import get_san_francisco_time as utils_current_time
+
 # Create an MCP server
 mcp = FastMCP(
     name=settings.server_name,
@@ -564,6 +567,19 @@ async def get_amplitude_funnel(
         events, start_date, end_date, mode, user_segment, conversion_window_days,
         interval, group_by, segments, limit, api_key, secret_key
     )
+
+
+# ============= UTILS TOOLS =============
+
+@mcp.tool()
+async def current_time() -> Dict[str, Any]:
+    """
+    Get current time in San Francisco timezone
+    
+    Returns:
+        Current time, timezone info, and formatted strings for San Francisco
+    """
+    return await utils_current_time()
 
 
 # Run the server
