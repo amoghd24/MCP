@@ -1,6 +1,6 @@
 """
-Amplitude Events List API tool
-Provides simple event discovery capabilities using the events/list endpoint
+Amplitude Events API tool
+Provides event discovery capabilities using the events/list endpoint
 """
 
 import os
@@ -215,4 +215,4 @@ def _generate_events_insights(processed_data: Dict[str, Any]) -> List[str]:
     except Exception:
         insights.append("Events retrieved successfully - ready for analysis")
     
-    return insights
+    return insights 
