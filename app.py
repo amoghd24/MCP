@@ -15,8 +15,8 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage
 
-# Judgeval imports for tracing - TEMPORARILY DISABLED
-# from judgeval.tracer import Tracer, wrap
+# Judgeval imports for tracing
+from judgeval.tracer import Tracer, wrap
 
 # Apply nest_asyncio to allow nested event loops (needed for Jupyter/IPython)
 nest_asyncio.apply()
@@ -24,8 +24,8 @@ nest_asyncio.apply()
 # Load environment variables
 load_dotenv(".env")
 
-# Initialize Judgeval tracer - TEMPORARILY DISABLED
-# judgment = Tracer(project_name="mcp-integration-hub")
+# Initialize Judgeval tracer
+judgment = Tracer(project_name="mcp-integration-hub")
 
 
 
@@ -73,14 +73,17 @@ class MCPLangChainClient:
         self.session: Optional[ClientSession] = None
         self.exit_stack = AsyncExitStack()
         
-        # Initialize OpenAI client - TRACING DISABLED
-        self.llm = ChatOpenAI(model=model, temperature=0)
-        # Removed judgeval wrapping that was causing issues
+        # Initialize OpenAI client with Judgeval tracing
+        # Note: wrap() the underlying OpenAI client, not the LangChain wrapper
+        from openai import OpenAI
+        wrapped_openai_client = wrap(OpenAI())
+        self.llm = ChatOpenAI(model=model, temperature=0, client=wrapped_openai_client)
         
         self.stdio: Optional[Any] = None
         self.write: Optional[Any] = None
         self.agent_executor = None
 
+    @judgment.observe(span_type="function")
     async def connect_to_server(self, server_script_path: str = "src/server.py"):
         """Connect to an MCP server and set up LangChain tools.
 
@@ -118,14 +121,22 @@ class MCPLangChainClient:
         langchain_tools = []
         for tool in tools_result.tools:
             
-            # Create a function that calls the MCP tool - FIXED VERSION
+            # Create a function that calls the MCP tool with detailed tracing
             def create_tool_func(tool_name: str):
+                @judgment.observe(span_type="tool", name=f"mcp_tool_{tool_name}")
                 async def tool_func(**kwargs) -> str:
                     try:
+                        # Execute the MCP tool
                         result = await self.session.call_tool(tool_name, arguments=kwargs)
-                        return result.content[0].text
+                        output = result.content[0].text
+                        
+                        return output
                     except Exception as e:
-                        return f"Error executing tool {tool_name}: {str(e)}"
+                        error_msg = f"Error executing tool {tool_name}: {str(e)}"
+                        
+
+                        
+                        return error_msg
                 return tool_func
             
             # Create the Pydantic model for arguments
@@ -159,6 +170,7 @@ IMPORTANT INSTRUCTIONS:
 VERY IMPORTANT:  When asked for any current date related info, trigger the get_current_date tool. Available tools include Amplitude analytics, Notion, Slack, and GitHub integrations. Use them actively to fulfill user requests."""
         )
 
+    @judgment.observe(span_type="function")
     async def process_query(self, query: str) -> str:
         """Process a query using the LangChain ReAct agent with detailed tracing.
 
@@ -211,6 +223,9 @@ VERY IMPORTANT:  When asked for any current date related info, trigger the get_c
         # Use the last agent message if the __end__ chunk is empty
         if not final_response.strip() and last_agent_message:
             final_response = last_agent_message
+        
+        # Trace final output
+        await self._trace_final_output(final_response)
             
         return final_response
 
@@ -225,20 +240,23 @@ VERY IMPORTANT:  When asked for any current date related info, trigger the get_c
         result = await self.agent_executor.ainvoke(agent_input)
         return result["messages"][-1].content
 
+    @judgment.observe(span_type="function", name="agent_reasoning")
     async def _trace_agent_reasoning(self, agent_chunk):
         """Trace agent's reasoning steps"""
-        # Disabled - no tracing
         pass
 
+    @judgment.observe(span_type="function", name="tool_calls_batch")
     async def _trace_tool_calls(self, tools_chunk):
-        """Trace individual tool calls"""
-        # Disabled - no tracing
+        """Trace tool calls"""
         pass
 
-    async def _trace_individual_tool(self, tool_name: str, tool_response: str):
-        """Trace a specific tool call"""
-        # Disabled - no tracing
-        pass
+    @judgment.observe(span_type="function", name="final_output")
+    async def _trace_final_output(self, final_response: str):
+        """Trace the final output"""
+        # Process the response to ensure it's captured
+        if final_response:
+            return len(final_response)  # Return something to show it processed
+        return 0
 
     async def cleanup(self):
         """Clean up resources."""
