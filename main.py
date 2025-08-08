@@ -33,7 +33,7 @@ client_initialized = False
 
 class QueryRequest(BaseModel):
     query: str
-    model: Optional[str] = "gpt-4o"
+    model: Optional[str] = "o3"
 
 class QueryResponse(BaseModel):
     response: str

@@ -150,13 +150,13 @@ class MCPLangChainClient:
             state_modifier="""You are a proactive analytics assistant specializing in data analysis and dashboard creation.
 
 IMPORTANT INSTRUCTIONS:
-1. Always USE available tools to gather actual data rather than giving generic responses
+1. Always USE available tools to gather actual data rather than giving generic responses. When asked for any current date related info, trigger the get_current_date tool.
 2. When asked to create dashboards or analyze data, immediately start using tools to collect information
 3. For Amplitude analytics, start by discovering available events using get_amplitude_events_list
 4. Then proceed with specific analysis based on the user's requirements
 5. Be thorough and provide actual data-driven insights, not just plans or suggestions
 
-Available tools include Amplitude analytics, Notion, Slack, and GitHub integrations. Use them actively to fulfill user requests."""
+VERY IMPORTANT:  When asked for any current date related info, trigger the get_current_date tool. Available tools include Amplitude analytics, Notion, Slack, and GitHub integrations. Use them actively to fulfill user requests."""
         )
 
     async def process_query(self, query: str) -> str:
