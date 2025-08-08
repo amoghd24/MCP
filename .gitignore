@@ -19,6 +19,7 @@ ENV/
 env.bak/
 venv.bak/
 mvp-env/
+mcp-env/
 .venv/
 .python-version
 

@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, List
 from dotenv import load_dotenv
 
 # Import the LangChain client from app.py
-from app import MCPLangChainClient
+from app import MCPLangChainClient, judgment
 
 # Load environment variables
 load_dotenv(".env")
@@ -47,6 +47,7 @@ class ToolsResponse(BaseModel):
     tools: List[ToolInfo]
 
 @app.post("/api/query", response_model=QueryResponse)
+@judgment.observe(span_type="function")
 async def process_query(request: QueryRequest):
     """Process a natural language query using the LangChain agent with MCP tools."""
     global client_initialized
@@ -66,6 +67,7 @@ async def process_query(request: QueryRequest):
         raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
 
 @app.get("/api/tools", response_model=ToolsResponse)
+@judgment.observe(span_type="function")
 async def get_tools():
     """Get all available tools from the MCP server."""
     global client_initialized
