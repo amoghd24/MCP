@@ -63,7 +63,7 @@ def create_pydantic_model_from_schema(name: str, schema: Dict[str, Any]) -> Type
 class MCPLangChainClient:
     """Client for interacting with LangChain agents using MCP tools."""
 
-    def __init__(self, model: str = "gpt-4o"):
+    def __init__(self, model: str = "gpt-4.1"):
         """Initialize the LangChain MCP client.
 
         Args:
@@ -167,7 +167,12 @@ IMPORTANT INSTRUCTIONS:
 4. Then proceed with specific analysis based on the user's requirements
 5. Be thorough and provide actual data-driven insights, not just plans or suggestions
 
-VERY IMPORTANT:  When asked for any current date related info, trigger the get_current_date tool. Available tools include Amplitude analytics, Notion, Slack, and GitHub integrations. Use them actively to fulfill user requests."""
+VERY IMPORTANT:  When asked for any current date related info, trigger the get_current_date tool. Available tools include Amplitude analytics, Notion, Slack, and GitHub integrations. Use them actively to fulfill user requests.
+
+Our Amplitude data will not have event login. So please dont count it in your analysis if required. 
+
+All our github repos will be amoghd24/{repo_name} format. Please extract the repo name from the user query.
+"""
         )
 
     @judgment.observe(span_type="function")
